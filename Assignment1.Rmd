@@ -1,0 +1,101 @@
+---
+title: "Predicting Quality of Exercise"
+author: "Chris Spooner"
+date: "11 October 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Summary
+
+The objective of this project is to use predictive modeling to determine if the quality of exercises can be predicted
+using data obtained from wearable accerlerometers. The modeling shows that a random forest prediction model with high accuracy can be used to predict the quality of the exercising.
+
+##Data Processing
+
+Load the required packages
+
+```{r packages, echo=TRUE}
+#include the required libraries
+library(caret)
+library(randomForest)
+```
+
+Load in the training and final testing datasets.
+
+```{r loadDatasets, echo=TRUE}
+#read in the training file
+training <- read.csv("pml-training.csv")
+finalTesting <- read.csv("pml-testing.csv")
+```
+
+##Clean and prepare the data
+
+Use Caret to create a training and testing dataset from the oringal pml-training file. We will do a 60/40 split of the training to test data. We will also remove unneeded columns such as timestamps and row counters, and then run a near zero vaiance alogorithm to remove the near zero variance predictors.
+
+```{r CreatePartitions, echo=TRUE}
+inTrain <- createDataPartition(y=training$classe,
+                               p=0.6, list=FALSE)
+training <- training[inTrain,]
+testing <- training[-inTrain,]
+```
+
+```{r CleanData, echo=TRUE}
+#Remove the first column from both training and testing which is just a record counter
+#and the timestamp fields
+training <- training[,c(-1,-3,-4,-5)]
+testing <- testing[,c(-1,-3,-4,-5)]
+
+#Some of the variables look like summaries that have many NA values, we should exlude these.
+#Find all the columns that do not contain any NA values
+NACols <- colSums(is.na(training))
+NonNAColNames <- names(NACols[NACols == 0])
+
+#Remove the summary columns from both datasets
+training <- training[,NonNAColNames]
+testing <- testing[,NonNAColNames]
+
+#Remove near zero variance predictors
+nzv <- nearZeroVar(training, saveMetrics=TRUE)
+training <- training[,nzv$nzv==FALSE]
+testing <- testing[,nzv$nzv==FALSE]
+
+#Get a final list of column names and apply to all datasets
+finalColNames <- names(training)
+finalColNames <- finalColNames[finalColNames != "classe"]
+finalTesting <- finalTesting[,finalColNames]
+```
+## Training
+
+We will use two different prediction models, tree and random forest classifications and then determine the best model.
+
+Recursive partioning and regression tree classification
+```{r RPart, echo=TRUE}
+set.seed(12345)
+modFitRPart <- train(as.factor(classe) ~ .,method="rpart",data=training)
+#create a confusion matrix to compare the training and testing data
+cm <- confusionMatrix(predict(modFitRPart, newdata=testing), testing$classe)
+plot(cm$table, col = cm$byClass,main = "Regression Tree Confusion Matrix")
+cm
+```
+Random tree classification
+```{r RTree, echo=TRUE}
+#Run a randomForest classification with ntree=5 to save processing time 
+modFitRFor <- randomForest(classe ~ ., data=training, importance=TRUE,
+                           proximity=TRUE, ntree=5)
+#create a confusion matrix to compare the training and testing data
+cm <- confusionMatrix(predict(modFitRFor, newdata=testing), testing$classe)
+plot(cm$table, col = cm$byClass, main = "Random Forest Confusion Matrix")
+cm
+```
+The accuracy of the tree classification (RPART) was found to be 57%, whilst for the random forest classification the accuracy was found to be 99.85%, therefore the random tree model will be used to predict the test data.,
+
+##Prediction
+The prediction of the classe for the testing set based on the random forest model is:
+```{r Predict, echo=TRUE}
+finalTesting$classe <- predict(modFitRFor,newdata=finalTesting)
+finalTesting$classe
+```
